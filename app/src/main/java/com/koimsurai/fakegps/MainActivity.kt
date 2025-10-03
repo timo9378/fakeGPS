@@ -5,6 +5,9 @@ package com.koimsurai.fakegps
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.location.Location
 import android.location.LocationManager
 import android.os.Build
@@ -86,7 +89,16 @@ class MainActivity : AppCompatActivity() {
 
         marker = Marker(mapView)
         marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-        marker.icon = ContextCompat.getDrawable(this, R.drawable.ic_marker)
+        val originalDrawable = ContextCompat.getDrawable(this, R.drawable.chiikawa_marker)
+        if (originalDrawable != null) {
+            val bitmap = (originalDrawable as BitmapDrawable).bitmap
+            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 80, 80, false)
+            val scaledDrawable: Drawable = BitmapDrawable(resources, scaledBitmap)
+            marker.icon = scaledDrawable
+        } else {
+            // Fallback to the vector marker if the image is not found
+            marker.icon = ContextCompat.getDrawable(this, R.drawable.ic_marker)
+        }
         mapView.overlays.add(marker)
 
         val mapEventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
