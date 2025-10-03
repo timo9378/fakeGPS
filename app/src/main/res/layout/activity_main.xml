@@ -50,14 +50,13 @@
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
-    <Spinner
-        android:id="@+id/favorites_spinner"
-        android:layout_width="match_parent"
+    <Button
+        android:id="@+id/show_favorites_button"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_below="@id/search_card"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginTop="8dp" />
+        android:layout_above="@id/toggle_mock_location"
+        android:layout_centerHorizontal="true"
+        android:text="Show Favorites" />
 
     <Button
         android:id="@+id/toggle_mock_location"

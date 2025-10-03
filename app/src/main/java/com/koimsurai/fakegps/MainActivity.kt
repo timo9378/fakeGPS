@@ -13,11 +13,9 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
+import android.app.AlertDialog
 import android.widget.Button
 import android.widget.EditText
-import android.widget.Spinner
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -38,7 +36,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var addressInput: EditText
     private lateinit var searchButton: Button
     private lateinit var favoriteButton: Button
-    private lateinit var favoritesSpinner: Spinner
+    private lateinit var showFavoritesButton: Button
     private var mockLocationProvider: MockLocationProvider? = null
     private var selectedPoint: GeoPoint? = null
     private var isMocking = false
@@ -76,7 +74,7 @@ class MainActivity : AppCompatActivity() {
         addressInput = findViewById(R.id.address_input)
         searchButton = findViewById(R.id.search_button)
         favoriteButton = findViewById(R.id.favorite_button)
-        favoritesSpinner = findViewById(R.id.favorites_spinner)
+        showFavoritesButton = findViewById(R.id.show_favorites_button)
 
         mapView.setTileSource(TileSourceFactory.MAPNIK)
         mapView.setMultiTouchControls(true)
@@ -118,49 +116,61 @@ class MainActivity : AppCompatActivity() {
         }
 
         favoriteButton.setOnClickListener {
-            addFavorite()
+            showAddFavoriteDialog()
+        }
+
+        showFavoritesButton.setOnClickListener {
+            showFavorites()
         }
 
         loadFavorites()
-        setupFavoritesSpinner()
     }
 
-    private fun setupFavoritesSpinner() {
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, favorites.keys.toList())
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        favoritesSpinner.adapter = adapter
+    private fun showFavorites() {
+        val bottomSheet = FavoritesBottomSheet(
+            favorites,
+            onFavoriteSelected = { geoPoint ->
+                selectedPoint = geoPoint
+                marker.position = geoPoint
+                mapView.controller.animateTo(geoPoint)
+                mapView.invalidate()
+                // Find name for selected geopoint to update EditText
+                val name = favorites.entries.find { it.value == geoPoint }?.key
+                addressInput.setText(name ?: "${geoPoint.latitude}, ${geoPoint.longitude}")
+            },
+            onFavoriteDeleted = { name ->
+                favorites.remove(name)
+                saveFavorites()
+                Toast.makeText(this, "Favorite deleted", Toast.LENGTH_SHORT).show()
+            }
+        )
+        bottomSheet.show(supportFragmentManager, "FavoritesBottomSheet")
+    }
 
-        favoritesSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>, view: android.view.View?, position: Int, id: Long) {
-                val selectedName = parent.getItemAtPosition(position) as String
-                val geoPoint = favorites[selectedName]
-                if (geoPoint != null) {
-                    selectedPoint = geoPoint
-                    marker.position = geoPoint
-                    mapView.controller.animateTo(geoPoint)
-                    mapView.invalidate()
-                    addressInput.setText(selectedName)
+    private fun showAddFavoriteDialog() {
+        if (selectedPoint == null) {
+            Toast.makeText(this, "Please select a location on the map first", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val input = EditText(this)
+        input.hint = "Enter a name for this location"
+
+        AlertDialog.Builder(this)
+            .setTitle("Add Favorite")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val name = input.text.toString()
+                if (name.isNotEmpty()) {
+                    favorites[name] = selectedPoint!!
+                    saveFavorites()
+                    Toast.makeText(this, "Favorite saved", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Name cannot be empty", Toast.LENGTH_SHORT).show()
                 }
             }
-
-            override fun onNothingSelected(parent: AdapterView<*>) {}
-        }
-    }
-
-    private fun addFavorite() {
-        if (selectedPoint == null) {
-            Toast.makeText(this, "Please select a location first", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val address = addressInput.text.toString()
-        if (address.isEmpty() || address.matches(Regex("-?[0-9]+(\\.[0-9]+)?,-?[0-9]+(\\.[0-9]+)?"))) {
-            Toast.makeText(this, "Please search for an address to get a name", Toast.LENGTH_SHORT).show()
-            return
-        }
-        favorites[address] = selectedPoint!!
-        saveFavorites()
-        setupFavoritesSpinner() // Refresh spinner
-        Toast.makeText(this, "Favorite added", Toast.LENGTH_SHORT).show()
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun saveFavorites() {
