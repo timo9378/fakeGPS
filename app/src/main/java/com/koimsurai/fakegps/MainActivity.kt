@@ -1,25 +1,37 @@
 // Author: koimsurai
-//
+
 package com.koimsurai.fakegps
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
-import android.location.Location
-import android.location.LocationManager
-import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.os.SystemClock
-import android.view.MotionEvent
-import android.app.AlertDialog
-import android.widget.Button
-import android.widget.EditText
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -28,23 +40,9 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
 
-    private lateinit var mapView: MapView
-    private lateinit var marker: Marker
-    private lateinit var toggleButton: Button
-    private lateinit var addressInput: EditText
-    private lateinit var searchButton: Button
-    private lateinit var favoriteButton: Button
-    private lateinit var showFavoritesButton: Button
-    private var mockLocationProvider: MockLocationProvider? = null
-    private var selectedPoint: GeoPoint? = null
-    private var isMocking = false
-
-    private val favorites = mutableMapOf<String, GeoPoint>()
-    private val handler = Handler(Looper.getMainLooper())
-    private lateinit var mockLocationRunnable: Runnable
-
+    private val viewModel: MainViewModel by viewModels()
     private val permissionsRequestCode = 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,7 +52,6 @@ class MainActivity : AppCompatActivity() {
         val permissions = arrayOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE,
             "android.permission.ACCESS_MOCK_LOCATION"
         )
         val permissionsToRequest = permissions.filter {
@@ -67,247 +64,283 @@ class MainActivity : AppCompatActivity() {
         // Load osmdroid configuration
         Configuration.getInstance().load(applicationContext, getSharedPreferences("osmdroid", MODE_PRIVATE))
 
-        setContentView(R.layout.activity_main)
+        viewModel.loadFavorites(this)
+        viewModel.loadLastLocation(this)
 
-        mapView = findViewById(R.id.map)
-        toggleButton = findViewById(R.id.toggle_mock_location)
-        addressInput = findViewById(R.id.address_input)
-        searchButton = findViewById(R.id.search_button)
-        favoriteButton = findViewById(R.id.favorite_button)
-        showFavoritesButton = findViewById(R.id.show_favorites_button)
-
-        mapView.setTileSource(TileSourceFactory.MAPNIK)
-        mapView.setMultiTouchControls(true)
-
-        val mapController = mapView.controller
-        mapController.setZoom(18.0)
-        val startPoint = GeoPoint(25.0330, 121.5654)
-        mapController.setCenter(startPoint)
-
-        marker = Marker(mapView)
-        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-        marker.icon = ContextCompat.getDrawable(this, R.drawable.ic_marker)
-        mapView.overlays.add(marker)
-
-        val mapEventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
-            override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
-                selectedPoint = p
-                marker.position = p
-                mapView.invalidate()
-                return true
-            }
-
-            override fun longPressHelper(p: GeoPoint): Boolean {
-                return false
-            }
-        })
-        mapView.overlays.add(0, mapEventsOverlay)
-
-        toggleButton.setOnClickListener {
-            if (isMocking) {
-                stopMockLocation()
-            } else {
-                startMockLocation()
+        setContent {
+            MaterialTheme {
+                MainScreen(viewModel)
             }
         }
-
-        searchButton.setOnClickListener {
-            searchAddress()
-        }
-
-        favoriteButton.setOnClickListener {
-            showAddFavoriteDialog()
-        }
-
-        showFavoritesButton.setOnClickListener {
-            showFavorites()
-        }
-
-        loadFavorites()
-    }
-
-    private fun showFavorites() {
-        val bottomSheet = FavoritesBottomSheet(
-            favorites,
-            onFavoriteSelected = { geoPoint ->
-                selectedPoint = geoPoint
-                marker.position = geoPoint
-                mapView.controller.animateTo(geoPoint)
-                mapView.invalidate()
-                // Find name for selected geopoint to update EditText
-                val name = favorites.entries.find { it.value == geoPoint }?.key
-                addressInput.setText(name ?: "${geoPoint.latitude}, ${geoPoint.longitude}")
-            },
-            onFavoriteDeleted = { name ->
-                favorites.remove(name)
-                saveFavorites()
-                Toast.makeText(this, "Favorite deleted", Toast.LENGTH_SHORT).show()
-            }
-        )
-        bottomSheet.show(supportFragmentManager, "FavoritesBottomSheet")
-    }
-
-    private fun showAddFavoriteDialog() {
-        if (selectedPoint == null) {
-            Toast.makeText(this, "Please select a location on the map first", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val input = EditText(this)
-        input.hint = "Enter a name for this location"
-
-        AlertDialog.Builder(this)
-            .setTitle("Add Favorite")
-            .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                val name = input.text.toString()
-                if (name.isNotEmpty()) {
-                    favorites[name] = selectedPoint!!
-                    saveFavorites()
-                    Toast.makeText(this, "Favorite saved", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, "Name cannot be empty", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun saveFavorites() {
-        val prefs = getSharedPreferences("favorites", Context.MODE_PRIVATE).edit()
-        val favoriteSet = favorites.map { "${it.key}|${it.value.latitude}|${it.value.longitude}" }.toSet()
-        prefs.putStringSet("locations", favoriteSet)
-        prefs.apply()
-    }
-
-    private fun loadFavorites() {
-        val prefs = getSharedPreferences("favorites", Context.MODE_PRIVATE)
-        val favoriteSet = prefs.getStringSet("locations", emptySet()) ?: emptySet()
-        favorites.clear()
-        favoriteSet.forEach {
-            val parts = it.split("|")
-            if (parts.size == 3) {
-                favorites[parts[0]] = GeoPoint(parts[1].toDouble(), parts[2].toDouble())
-            }
-        }
-    }
-
-    private fun searchAddress() {
-        val addressString = addressInput.text.toString()
-        if (addressString.isEmpty()) {
-            Toast.makeText(this, "Please enter an address", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        Thread {
-            try {
-                val geocoder = android.location.Geocoder(this)
-                val addresses = geocoder.getFromLocationName(addressString, 1)
-                if (addresses != null && addresses.isNotEmpty()) {
-                    val address = addresses[0]
-                    val geoPoint = GeoPoint(address.latitude, address.longitude)
-                    runOnUiThread {
-                        selectedPoint = geoPoint
-                        marker.position = geoPoint
-                        mapView.controller.animateTo(geoPoint)
-                        mapView.invalidate()
-                        addressInput.setText("${address.latitude}, ${address.longitude}")
-                    }
-                } else {
-                    runOnUiThread {
-                        Toast.makeText(this, "Address not found", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: java.io.IOException) {
-                runOnUiThread {
-                    Toast.makeText(this, "Geocoder service not available", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }.start()
-    }
-
-    private fun startMockLocation() {
-        if (selectedPoint == null) {
-            Toast.makeText(this, "Please select a location on the map first", Toast.LENGTH_SHORT).show()
-            return
-        }
-        try {
-            mockLocationProvider = MockLocationProvider(LocationManager.GPS_PROVIDER, this)
-            isMocking = true
-            toggleButton.text = "Stop Mock Location"
-            Toast.makeText(this, "Mock location started", Toast.LENGTH_SHORT).show()
-
-            mockLocationRunnable = object : Runnable {
-                override fun run() {
-                    selectedPoint?.let {
-                        mockLocationProvider?.pushLocation(it.latitude, it.longitude)
-                    }
-                    handler.postDelayed(this, 1000) // Repeat every second
-                }
-            }
-            handler.post(mockLocationRunnable)
-
-        } catch (e: SecurityException) {
-            Toast.makeText(this, "Please enable 'Mock Locations' in Developer Options", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun stopMockLocation() {
-        if (::mockLocationRunnable.isInitialized) {
-            handler.removeCallbacks(mockLocationRunnable)
-        }
-        mockLocationProvider?.shutdown()
-        mockLocationProvider = null
-        isMocking = false
-        toggleButton.text = "Start Mock Location"
-        Toast.makeText(this, "Mock location stopped", Toast.LENGTH_SHORT).show()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        mapView.onResume()
     }
 
     override fun onPause() {
         super.onPause()
-        mapView.onPause()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        stopMockLocation()
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        // Handle permission results if needed
+        viewModel.saveLastLocation(this)
     }
 }
 
-class MockLocationProvider(providerName: String, context: Context) {
-    private val locationManager: LocationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    private val providerName: String
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainScreen(viewModel: MainViewModel) {
+    val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState()
+    var showBottomSheet by remember { mutableStateOf(false) }
+    var showAddFavoriteDialog by remember { mutableStateOf(false) }
 
-    init {
-        this.providerName = providerName
-        locationManager.addTestProvider(providerName, false, false, false, false, true, true, true, 1, 2)
-        locationManager.setTestProviderEnabled(providerName, true)
+    if (showAddFavoriteDialog) {
+        AddFavoriteDialog(
+            onDismiss = { showAddFavoriteDialog = false },
+            onConfirm = { name ->
+                viewModel.addFavorite(name, context)
+                showAddFavoriteDialog = false
+            }
+        )
     }
 
-    fun pushLocation(lat: Double, lon: Double) {
-        val mockLocation = Location(providerName)
-        mockLocation.latitude = lat
-        mockLocation.longitude = lon
-        mockLocation.altitude = 0.0
-        mockLocation.time = System.currentTimeMillis()
-        mockLocation.accuracy = 1f
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            mockLocation.elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+    if (showBottomSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showBottomSheet = false },
+            sheetState = sheetState
+        ) {
+            FavoritesSheetContent(
+                favorites = uiState.favorites,
+                onFavoriteSelected = { geoPoint ->
+                    viewModel.selectPoint(geoPoint)
+                    scope.launch { sheetState.hide() }.invokeOnCompletion {
+                        if (!sheetState.isVisible) {
+                            showBottomSheet = false
+                        }
+                    }
+                },
+                onFavoriteDeleted = { name ->
+                    viewModel.deleteFavorite(name, context)
+                }
+            )
         }
-        locationManager.setTestProviderLocation(providerName, mockLocation)
     }
 
-    fun shutdown() {
-        locationManager.removeTestProvider(providerName)
+    Scaffold(
+        floatingActionButton = {
+            FloatingActionButton(onClick = {
+                if (uiState.isMocking) {
+                    viewModel.stopMockLocation(context)
+                } else {
+                    viewModel.startMockLocation(context)
+                }
+            }) {
+                Icon(
+                    if (uiState.isMocking) Icons.Default.Stop else Icons.Default.PlayArrow,
+                    contentDescription = if (uiState.isMocking) "Stop Mock Location" else "Start Mock Location"
+                )
+            }
+        },
+        bottomBar = {
+            BottomAppBar {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    IconButton(onClick = { showBottomSheet = true }) {
+                        Icon(Icons.Default.Favorite, contentDescription = "Show Favorites")
+                    }
+                    IconButton(onClick = { viewModel.toggleMapVisibility() }) {
+                        Icon(Icons.Default.Map, contentDescription = "Toggle Map Visibility")
+                    }
+                }
+            }
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            if (uiState.mapVisible) {
+                MapViewContainer(
+                    selectedPoint = uiState.selectedPoint,
+                    onPointSelected = { viewModel.selectPoint(it) }
+                )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Map is hidden")
+                }
+            }
+
+            SearchBar(
+                value = uiState.searchInput,
+                onValueChange = { viewModel.setSearchInput(it) },
+                onSearch = { viewModel.searchAddress(context) },
+                onAddFavorite = {
+                    if (uiState.selectedPoint != null) {
+                        showAddFavoriteDialog = true
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun FavoritesSheetContent(
+    favorites: Map<String, GeoPoint>,
+    onFavoriteSelected: (GeoPoint) -> Unit,
+    onFavoriteDeleted: (String) -> Unit
+) {
+    // LazyColumn needs a fixed height inside a ModalBottomSheet, padding at the bottom is a good practice.
+    LazyColumn(modifier = Modifier.padding(bottom = 56.dp)) {
+        item {
+            Text(
+                text = "Favorites",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(16.dp)
+            )
+        }
+        items(favorites.toList()) { (name, geoPoint) ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onFavoriteSelected(geoPoint) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(name, style = MaterialTheme.typography.bodyLarge)
+                IconButton(onClick = { onFavoriteDeleted(name) }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete Favorite")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AddFavoriteDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Favorite") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Favorite Name") },
+                singleLine = true,
+                isError = name.isBlank()
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(name) },
+                enabled = name.isNotBlank() // Only enable button if name is not blank
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun SearchBar(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    onAddFavorite: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.weight(1f),
+            label = { Text("Search Address") },
+            singleLine = true
+        )
+        IconButton(onClick = onAddFavorite) {
+            Icon(Icons.Default.Add, contentDescription = "Add to Favorites")
+        }
+        Button(onClick = onSearch) {
+            Icon(Icons.Default.Search, contentDescription = "Search")
+        }
+    }
+}
+
+@Composable
+fun MapViewContainer(
+    selectedPoint: GeoPoint?,
+    onPointSelected: (GeoPoint) -> Unit
+) {
+    val context = LocalContext.current
+    val mapView = remember { MapView(context) }
+    // Marker needs to be remembered as well
+    val marker = remember { Marker(mapView) }
+
+    AndroidView(
+        factory = {
+            mapView.apply {
+                setTileSource(TileSourceFactory.MAPNIK)
+                setMultiTouchControls(true)
+                controller.setZoom(18.0)
+
+                marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                marker.setOnMarkerClickListener { _, _ -> true } // Disable the info window
+                // Using a built-in icon as a placeholder for R.drawable.ic_marker
+                // IMPORTANT: Replace this with your own drawable when available
+                marker.icon = ContextCompat.getDrawable(context, android.R.drawable.ic_menu_myplaces)
+                overlays.add(marker)
+
+                val mapEventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
+                    override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
+                        onPointSelected(p)
+                        return true
+                    }
+
+                    override fun longPressHelper(p: GeoPoint): Boolean {
+                        return false
+                    }
+                })
+                overlays.add(0, mapEventsOverlay)
+            }
+        },
+        update = { view ->
+            selectedPoint?.let {
+                view.controller.animateTo(it)
+                marker.position = it
+            }
+            view.invalidate()
+        },
+        modifier = Modifier.fillMaxSize()
+    )
+
+    // Set initial center using LaunchedEffect
+    LaunchedEffect(Unit) {
+        if (selectedPoint != null) {
+            mapView.controller.setCenter(selectedPoint)
+            marker.position = selectedPoint
+        } else {
+            // Default to Taipei 101 if no last location
+            val defaultPoint = GeoPoint(25.0330, 121.5654)
+            mapView.controller.setCenter(defaultPoint)
+            marker.position = defaultPoint
+            onPointSelected(defaultPoint)
+        }
     }
 }
