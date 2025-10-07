@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Fake GPS</string>
+    <string name="app_name">Koimsurai GPS</string>
 
     <!-- Main Activity & UI -->
     <string name="search_address_hint">輸入地址或座標</string>

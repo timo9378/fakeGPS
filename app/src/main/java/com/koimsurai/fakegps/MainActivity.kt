@@ -1,3 +1,5 @@
+// Author: koimsurai
+
 package com.koimsurai.fakegps
 
 import android.Manifest
