@@ -1,3 +1,31 @@
 <resources>
-    <string name="app_name">Koimsurai GPS</string>
+    <string name="app_name">Fake GPS</string>
+
+    <!-- Main Activity & UI -->
+    <string name="search_address_hint">輸入地址或座標</string>
+    <string name="search">搜尋</string>
+    <string name="add_to_favorites">加入最愛</string>
+    <string name="show_favorites">我的最愛</string>
+    <string name="start_mock_location">開始模擬</string>
+    <string name="stop_mock_location">停止模擬</string>
+    <string name="toggle_map_visibility">顯示/隱藏地圖</string>
+    <string name="map_hidden_message">地圖已隱藏</string>
+
+    <!-- Favorites -->
+    <string name="favorites_title">我的最愛</string>
+    <string name="add_favorite_dialog_title">新增至最愛</string>
+    <string name="favorite_name_hint">為此地點命名</string>
+    <string name="save">儲存</string>
+    <string name="cancel">取消</string>
+
+    <!-- Toasts & Messages -->
+    <string name="toast_select_location_first">請先在地圖上選擇一個位置</string>
+    <string name="toast_favorite_saved">已儲存至最愛</string>
+    <string name="toast_favorite_deleted">已刪除最愛</string>
+    <string name="toast_name_cannot_be_empty">名稱不能為空</string>
+    <string name="toast_address_not_found">找不到地址</string>
+    <string name="toast_geocoder_not_available">地理編碼服務不可用</string>
+    <string name="toast_mock_location_started">模擬位置已啟動</string>
+    <string name="toast_mock_location_stopped">模擬位置已停止</string>
+    <string name="toast_enable_mock_locations">請至「開發者選項」啟用「允許模擬位置」</string>
 </resources>
