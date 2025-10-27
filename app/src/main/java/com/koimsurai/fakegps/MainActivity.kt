@@ -3,8 +3,14 @@
 package com.koimsurai.fakegps
 
 import android.Manifest
+import android.app.ActivityManager
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -28,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -45,6 +52,19 @@ class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
     private val permissionsRequestCode = 1
 
+    private var isBound = false
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            isBound = true
+            viewModel.setServiceState(true)
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            isBound = false
+            viewModel.setServiceState(false)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -52,7 +72,8 @@ class MainActivity : ComponentActivity() {
         val permissions = arrayOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
-            "android.permission.ACCESS_MOCK_LOCATION"
+            "android.permission.ACCESS_MOCK_LOCATION",
+            Manifest.permission.POST_NOTIFICATIONS
         )
         val permissionsToRequest = permissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -74,9 +95,38 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        val isRunning = isServiceRunning()
+        if (isRunning) {
+            Intent(this, MockLocationService::class.java).also { intent ->
+                bindService(intent, serviceConnection, 0)
+            }
+        }
+        viewModel.setServiceState(isRunning)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (isBound) {
+            unbindService(serviceConnection)
+            isBound = false
+        }
+    }
+
     override fun onPause() {
         super.onPause()
         viewModel.saveLastLocation(this)
+    }
+
+    private fun isServiceRunning(): Boolean {
+        val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        for (service in manager.getRunningServices(Integer.MAX_VALUE)) {
+            if (MockLocationService::class.java.name == service.service.className) {
+                return true
+            }
+        }
+        return false
     }
 }
 
@@ -133,7 +183,7 @@ fun MainScreen(viewModel: MainViewModel) {
             }) {
                 Icon(
                     if (uiState.isMocking) Icons.Default.Stop else Icons.Default.PlayArrow,
-                    contentDescription = if (uiState.isMocking) "Stop Mock Location" else "Start Mock Location"
+                    contentDescription = if (uiState.isMocking) stringResource(R.string.stop_mock_location) else stringResource(R.string.start_mock_location)
                 )
             }
         },
@@ -144,10 +194,10 @@ fun MainScreen(viewModel: MainViewModel) {
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     IconButton(onClick = { showBottomSheet = true }) {
-                        Icon(Icons.Default.Favorite, contentDescription = "Show Favorites")
+                        Icon(Icons.Default.Favorite, contentDescription = stringResource(R.string.show_favorites))
                     }
                     IconButton(onClick = { viewModel.toggleMapVisibility() }) {
-                        Icon(Icons.Default.Map, contentDescription = "Toggle Map Visibility")
+                        Icon(Icons.Default.Map, contentDescription = stringResource(R.string.toggle_map_visibility))
                     }
                 }
             }
@@ -168,7 +218,7 @@ fun MainScreen(viewModel: MainViewModel) {
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Map is hidden")
+                    Text(stringResource(R.string.map_hidden_message))
                 }
             }
 
@@ -196,7 +246,7 @@ fun FavoritesSheetContent(
     LazyColumn(modifier = Modifier.padding(bottom = 56.dp)) {
         item {
             Text(
-                text = "Favorites",
+                text = stringResource(R.string.favorites_title),
                 style = MaterialTheme.typography.headlineSmall,
                 modifier = Modifier.padding(16.dp)
             )
@@ -212,7 +262,7 @@ fun FavoritesSheetContent(
             ) {
                 Text(name, style = MaterialTheme.typography.bodyLarge)
                 IconButton(onClick = { onFavoriteDeleted(name) }) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete Favorite")
+                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_favorite))
                 }
             }
         }
@@ -228,12 +278,12 @@ fun AddFavoriteDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add Favorite") },
+        title = { Text(stringResource(R.string.add_favorite_dialog_title)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Favorite Name") },
+                label = { Text(stringResource(R.string.favorite_name_hint)) },
                 singleLine = true,
                 isError = name.isBlank()
             )
@@ -243,12 +293,12 @@ fun AddFavoriteDialog(
                 onClick = { onConfirm(name) },
                 enabled = name.isNotBlank() // Only enable button if name is not blank
             ) {
-                Text("Save")
+                Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
@@ -271,14 +321,14 @@ fun SearchBar(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier.weight(1f),
-            label = { Text("Search Address") },
+            label = { Text(stringResource(R.string.search_address_hint)) },
             singleLine = true
         )
         IconButton(onClick = onAddFavorite) {
-            Icon(Icons.Default.Add, contentDescription = "Add to Favorites")
+            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_to_favorites))
         }
         Button(onClick = onSearch) {
-            Icon(Icons.Default.Search, contentDescription = "Search")
+            Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search))
         }
     }
 }

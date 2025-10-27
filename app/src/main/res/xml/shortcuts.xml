@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="set_last_location"
+        android:enabled="true"
+        android:icon="@drawable/ic_map"
+        android:shortcutShortLabel="@string/shortcut_set_last_location_short_label">
+        <intent
+            android:action="com.koimsurai.fakegps.ACTION_SET_LAST_LOCATION"
+            android:targetPackage="com.koimsurai.fakegps"
+            android:targetClass="com.koimsurai.fakegps.ShortcutActivity" />
+    </shortcut>
+</shortcuts>

@@ -28,4 +28,12 @@
     <string name="toast_mock_location_started">模擬位置已啟動</string>
     <string name="toast_mock_location_stopped">模擬位置已停止</string>
     <string name="toast_enable_mock_locations">請至「開發者選項」啟用「允許模擬位置」</string>
+    <string name="shortcut_set_last_location_short_label">設定最後定位位置</string>
+    <string name="delete_favorite">刪除最愛</string>
+    <string name="toast_no_last_location_saved">沒有儲存最後位置</string>
+    <string name="notification_channel_name">模擬位置服務</string>
+    <string name="notification_channel_description">在背景執行模擬位置</string>
+    <string name="notification_title">模擬位置已啟動</string>
+    <string name="notification_text">模擬中：%.6f, %.6f</string>
+    <string name="notification_action_stop">停止</string>
 </resources>

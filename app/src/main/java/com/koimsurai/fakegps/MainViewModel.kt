@@ -1,6 +1,7 @@
 package com.koimsurai.fakegps
 
 import android.content.Context
+import android.content.Intent
 import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
@@ -19,6 +20,7 @@ import java.io.IOException
 data class MainUiState(
     val selectedPoint: GeoPoint? = null,
     val isMocking: Boolean = false,
+    val isServiceRunning: Boolean = false,
     val favorites: Map<String, GeoPoint> = emptyMap(),
     val mapVisible: Boolean = true,
     val searchInput: String = ""
@@ -29,7 +31,9 @@ class MainViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState = _uiState.asStateFlow()
 
-    private var mockLocationProvider: MockLocationProvider? = null
+    fun setServiceState(isRunning: Boolean) {
+        _uiState.update { it.copy(isServiceRunning = isRunning, isMocking = isRunning) }
+    }
 
     fun setSearchInput(input: String) {
         _uiState.update { it.copy(searchInput = input) }
@@ -44,32 +48,32 @@ class MainViewModel : ViewModel() {
     }
 
     fun startMockLocation(context: Context) {
-        if (_uiState.value.selectedPoint == null) {
+        val point = _uiState.value.selectedPoint
+        if (point == null) {
             Toast.makeText(context, context.getString(R.string.toast_select_location_first), Toast.LENGTH_SHORT).show()
             return
         }
-        try {
-            mockLocationProvider = MockLocationProvider("gps", context)
-            viewModelScope.launch {
-                _uiState.update { it.copy(isMocking = true) }
-                Toast.makeText(context, context.getString(R.string.toast_mock_location_started), Toast.LENGTH_SHORT).show()
-                while (_uiState.value.isMocking) {
-                    _uiState.value.selectedPoint?.let { point ->
-                        mockLocationProvider?.pushLocation(point.latitude, point.longitude)
-                    }
-                    kotlinx.coroutines.delay(1000)
-                }
-            }
-        } catch (e: SecurityException) {
-            Toast.makeText(context, context.getString(R.string.toast_enable_mock_locations), Toast.LENGTH_LONG).show()
+
+        val serviceIntent = Intent(context, MockLocationService::class.java).apply {
+            action = MockLocationService.ACTION_START_MOCK
+            putExtra(MockLocationService.EXTRA_LATITUDE, point.latitude)
+            putExtra(MockLocationService.EXTRA_LONGITUDE, point.longitude)
         }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(serviceIntent)
+        } else {
+            context.startService(serviceIntent)
+        }
+        _uiState.update { it.copy(isMocking = true) }
     }
 
     fun stopMockLocation(context: Context) {
-        mockLocationProvider?.shutdown()
-        mockLocationProvider = null
+        val serviceIntent = Intent(context, MockLocationService::class.java).apply {
+            action = MockLocationService.ACTION_STOP_MOCK
+        }
+        context.startService(serviceIntent)
         _uiState.update { it.copy(isMocking = false) }
-        Toast.makeText(context, context.getString(R.string.toast_mock_location_stopped), Toast.LENGTH_SHORT).show()
     }
 
     fun searchAddress(context: Context) {
